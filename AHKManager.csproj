@@ -8,7 +8,7 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <ApplicationIcon>AM2.ico</ApplicationIcon>
     <AssemblyName>Adiis-m2-helper</AssemblyName>
-    <Version>1.4.0</Version>
+    <Version>1.4.2</Version>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
