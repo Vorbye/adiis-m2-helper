@@ -35,10 +35,14 @@ Die Version wird vom Workflow in EXE und Oberfläche gesetzt. Auf deinem eigenen
 
 Nur fünf Programmdateien: die EXE und `App/server.ps1`, `App/index.html`, `App/MetinWindows.cs`, `App/icon.png`.
 
-Eigene `Scripts`, eine vorhandene portable AutoHotkey-Laufzeit und die Daten unter `%APPDATA%\AHKManager` werden nicht überschrieben. Die bisherigen Programmdateien werden in einem `Update-Backup-…`-Ordner gesichert. Scheitert das Ersetzen, versucht der Installer die bereits ersetzten Dateien zurückzusetzen.
+Eigene `Scripts`, eine vorhandene portable AutoHotkey-Laufzeit und die Daten unter `%APPDATA%\AHKManager` werden nicht überschrieben. Ab Version 1.4.2 ersetzt der Installer die Programmdateien direkt und erstellt keine Update-Backups. Bei einer fehlgeschlagenen Installation kann das aktuelle Windows-Paket manuell über die vorhandenen Programmdateien entpackt werden.
 
 Der Helper lädt nur das feste Windows-Paket aus diesem Repository über HTTPS, vergleicht dessen SHA-256 mit der Release-Prüfsumme und akzeptiert ausschließlich die erwarteten Programmdateien. Das schützt vor beschädigten Downloads und falschen Paketinhalten; die Freigabe der veröffentlichten Version bleibt bei dir als Repository-Inhaber. Es gibt keinen GitHub-Schlüssel in der App.
 
 Zum Installieren muss der App-Ordner beschreibbar sein. Den Helper z. B. in einem eigenen Ordner unter Dokumente verwenden; bei erhöhten Rechten auch das Update aus derselben Sitzung installieren. Bei Netzproblemen, GitHub-Limits oder fehlenden Assets erscheint eine Meldung statt einer Installation.
 
 Die Windows-Kompilierung und ein echter Update-Durchlauf konnten in dieser Chat-Umgebung nicht ausgeführt werden. Der erste GitHub-Build prüft die Kompilierung; vor Veröffentlichung bitte Installation, Timer und Fensterfunktionen unter Windows testen.
+
+## Wechsel von 1.4.1 auf 1.4.2 ohne weiteres Backup
+
+Version 1.4.1 kopiert noch ihren eigenen alten Installer und erstellt deshalb beim automatischen Update ein letztes Backup. Um das zu vermeiden: Version 1.4.2 bauen, ZIP herunterladen, Helper schließen und den vollständigen Inhalt über den vorhandenen App-Ordner entpacken. Eigene Scripts und eine vorhandene AutoHotkey-Laufzeit dabei behalten. Ab dann sind automatische Updates ohne Update-Backup möglich. Bereits vorhandene Backup-Ordner werden durch diese Änderung nicht automatisch gelöscht.
