@@ -1,0 +1,82 @@
+name: Windows Release bauen
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versionsnummer ohne v, zum Beispiel 1.4.0'
+        required: true
+        default: '1.4.0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Version setzen
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Version muss wie 1.4.0 aussehen.' }
+          $html = [IO.File]::ReadAllText('index.html')
+          $html = [regex]::Replace($html, 'class="version">[^<]+<', ('class="version">' + $env:RELEASE_VERSION + '<'))
+          [IO.File]::WriteAllText('index.html', $html, [Text.UTF8Encoding]::new($false))
+      - name: Windows-PowerShell-Code prüfen
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tokens=$null; $errors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'server.ps1'),[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { throw ($errors | Out-String) }
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -Path (Join-Path $PWD 'MetinWindows.cs') -ReferencedAssemblies System.Windows.Forms,System.Drawing
+      - name: App bauen
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          dotnet publish AHKManager.csproj -c Release -r win-x64 --self-contained true -p:Version=$env:RELEASE_VERSION -o build
+          if ($LASTEXITCODE -ne 0) { throw 'Build fehlgeschlagen.' }
+      - name: Update-Paketschutz testen
+        shell: pwsh
+        run: |
+          $test = Start-Process -FilePath (Join-Path $PWD 'build/Adiis-m2-helper.exe') -ArgumentList '--test-updater' -Wait -PassThru
+          if ($test.ExitCode -ne 0) { throw 'Update-Pakettests fehlgeschlagen.' }
+      - name: Windows-Paket erstellen
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $files = @('Adiis-m2-helper.exe','App/server.ps1','App/index.html','App/MetinWindows.cs','App/icon.png')
+          foreach ($file in $files) {
+            $source = Join-Path 'build' $file
+            if (-not (Test-Path -LiteralPath $source)) { throw "Datei fehlt: $file" }
+            $target = Join-Path 'package' $file
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($target))) | Out-Null
+            Copy-Item -LiteralPath $source -Destination $target
+          }
+          $exeVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $PWD 'package/Adiis-m2-helper.exe')).FileVersion
+          if ([version]$exeVersion -ne [version]($env:RELEASE_VERSION + '.0')) { throw 'EXE-Version stimmt nicht.' }
+          [IO.Compression.ZipFile]::CreateFromDirectory((Join-Path $PWD 'package'),(Join-Path $PWD 'Adiis-m2-helper-win-x64.zip'))
+          $hash = (Get-FileHash 'Adiis-m2-helper-win-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $PWD 'Adiis-m2-helper-win-x64.zip.sha256'),$hash,[Text.UTF8Encoding]::new($false))
+      - name: Release-Entwurf mit Downloads anlegen
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $tag = 'v' + $env:RELEASE_VERSION
+          gh release create $tag 'Adiis-m2-helper-win-x64.zip' 'Adiis-m2-helper-win-x64.zip.sha256' --target $env:GITHUB_SHA --title "Adiis m2 helper $tag" --notes 'Windows x64: ZIP vollständig entpacken und Adiis-m2-helper.exe starten. AutoHotkey v2 wird für AHK-Skripte benötigt. Vor Veröffentlichung den Download unter Windows testen.' --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Release konnte nicht erstellt werden. Für einen neuen Versuch eine noch nicht verwendete Version nehmen.' }
