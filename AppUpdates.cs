@@ -116,7 +116,7 @@ internal static class AppUpdates
     internal static void LaunchInstaller(string stage, string target)
     {
         string executable = Path.Combine(Path.GetDirectoryName(stage)!, "Installer.exe");
-        File.Copy(Application.ExecutablePath, executable);
+        File.Copy(Path.Combine(stage, ManagedFiles[0]), executable);
         var start = new ProcessStartInfo(executable) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(executable)! };
         start.ArgumentList.Add("--apply-update"); start.ArgumentList.Add(stage); start.ArgumentList.Add(target);
         start.ArgumentList.Add(Environment.ProcessId.ToString());
@@ -126,8 +126,6 @@ internal static class AppUpdates
     internal static void Install(string[] args)
     {
         string stage = Path.GetFullPath(args[1]), target = Path.GetFullPath(args[2]);
-        string backup = Path.Combine(target, "Update-Backup-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N").Substring(0, 6));
-        var changed = new List<string>();
         try
         {
             try
@@ -137,32 +135,24 @@ internal static class AppUpdates
                     throw new Exception("Der Helper ist noch geöffnet. Update abgebrochen.");
             }
             catch (ArgumentException) { }
-            foreach (string file in ManagedFiles)
-            {
-                string source = Path.Combine(stage, file);
-                if (!File.Exists(source)) throw new Exception("Update-Datei fehlt: " + file);
-                string dest = Path.Combine(target, file);
-                if (File.Exists(dest))
-                {
-                    string safe = Path.Combine(backup, file); Directory.CreateDirectory(Path.GetDirectoryName(safe)!); File.Copy(dest, safe);
-                }
-            }
-            foreach (string file in ManagedFiles)
-            {
-                string dest = Path.Combine(target, file); Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                changed.Add(file); File.Copy(Path.Combine(stage, file), dest, true);
-            }
+            ReplaceProgramFiles(stage, target);
             Process.Start(new ProcessStartInfo(Path.Combine(target, ManagedFiles[0])) { UseShellExecute = true, WorkingDirectory = target });
         }
         catch (Exception error)
         {
-            var restoreErrors = new List<string>();
-            foreach (string file in changed.AsEnumerable().Reverse())
-            {
-                try { string safe = Path.Combine(backup, file), dest = Path.Combine(target, file); if (File.Exists(safe)) File.Copy(safe, dest, true); else File.Delete(dest); }
-                catch (Exception ex) { restoreErrors.Add(file + ": " + ex.Message); }
-            }
-            MessageBox.Show("Update fehlgeschlagen: " + error.Message + "\n\nSicherung: " + backup + (restoreErrors.Count == 0 ? "\nBereits ersetzte Dateien wurden zurückgesetzt. Du kannst den Helper erneut starten." : "\nWiederherstellung unvollständig:\n" + string.Join("\n", restoreErrors)), "Update", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("Update fehlgeschlagen: " + error.Message + "\n\nBitte die aktuelle Windows-ZIP von GitHub herunterladen und vollständig in den App-Ordner entpacken. Es wurde keine Sicherung der bisherigen Programmdateien erstellt.", "Update", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+    internal static void ReplaceProgramFiles(string stage, string target)
+    {
+        // Check the complete new package before replacing any installed file.
+        foreach (string file in ManagedFiles)
+            if (!File.Exists(Path.Combine(stage, file))) throw new Exception("Update-Datei fehlt: " + file);
+        foreach (string file in ManagedFiles)
+        {
+            string destination = Path.Combine(target, file);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(Path.Combine(stage, file), destination, true);
         }
     }
     internal static int TestPackageValidation()
@@ -198,6 +188,20 @@ internal static class AppUpdates
                 catch { rejected = true; }
                 if (!rejected) return 1;
             }
+            string installed = Path.Combine(folder, "installed");
+            Directory.CreateDirectory(Path.Combine(installed, "Scripts"));
+            Directory.CreateDirectory(Path.Combine(installed, "App", "AutoHotkey"));
+            File.WriteAllText(Path.Combine(installed, "Scripts", "own.ahk"), "keep-script");
+            File.WriteAllText(Path.Combine(installed, "App", "AutoHotkey", "AutoHotkey64.exe"), "keep-interpreter");
+            File.WriteAllText(Path.Combine(installed, ManagedFiles[0]), "old-program");
+            ReplaceProgramFiles(Path.Combine(folder, "valid"), installed);
+            foreach (string file in ManagedFiles)
+                if (File.ReadAllText(Path.Combine(installed, file)) != "test") return 1;
+            if (File.ReadAllText(Path.Combine(installed, "Scripts", "own.ahk")) != "keep-script") return 1;
+            if (File.ReadAllText(Path.Combine(installed, "App", "AutoHotkey", "AutoHotkey64.exe")) != "keep-interpreter") return 1;
+            string[] expectedFiles = ManagedFiles.Concat(new[] { "Scripts/own.ahk", "App/AutoHotkey/AutoHotkey64.exe" }).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            string[] actualFiles = Directory.GetFiles(installed, "*", SearchOption.AllDirectories).Select(x => Path.GetRelativePath(installed, x).Replace('\\', '/')).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            if (!expectedFiles.SequenceEqual(actualFiles)) return 1;
             return File.Exists(Path.Combine(folder, "outside.txt")) ? 1 : 0;
         }
         catch { return 1; }
